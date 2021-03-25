@@ -23,6 +23,8 @@ class Scene(object):
         The set of all nodes in the scene.
     bg_color : (4,) float, optional
         Background color of scene.
+    background_texture : :class:`Texture`, optional
+        background_texture texture of scene.
     ambient_light : (3,) float, optional
         Color of ambient light. Defaults to no ambient light.
     name : str, optional
@@ -32,6 +34,7 @@ class Scene(object):
     def __init__(self,
                  nodes=None,
                  bg_color=None,
+                 background_texture=None,
                  ambient_light=None,
                  name=None):
 
@@ -61,7 +64,7 @@ class Scene(object):
         self._camera_nodes = set()
         self._main_camera_node = None
         self._bounds = None
-
+        self._background_texture = background_texture
         # Transform tree
         self._digraph = nx.DiGraph()
         self._digraph.add_node('world')
@@ -97,6 +100,18 @@ class Scene(object):
         """set of :class:`Node` : Set of nodes in the scene.
         """
         return self._nodes
+
+    @property
+    def background_texture(self):
+        """:class:`Texture` : The scene background texture.
+        """
+        return self._background_texture
+
+    @background_texture.setter
+    def background_texture(self, value):
+        if value and value.source is None:
+            raise ValueError('Background texture must contain a valid source.')
+        self._background_texture = value
 
     @property
     def bg_color(self):
