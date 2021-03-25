@@ -15,7 +15,7 @@ from .material import MetallicRoughnessMaterial, SpecularGlossinessMaterial
 from .light import PointLight, SpotLight, DirectionalLight
 from .font import FontCache
 from .utils import format_color_vector
-
+from .primitive import Primitive
 from OpenGL.GL import *
 
 
@@ -65,6 +65,8 @@ class Renderer(object):
         self._meshes = set()
         self._mesh_textures = set()
         self._shadow_textures = set()
+        self._background_texture = None
+        self._fullscreen_quad_primitive = None
         self._texture_alloc_idx = 0
 
     @property
@@ -335,6 +337,10 @@ class Renderer(object):
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
+        # render the background
+        if self._background_texture:
+            self._render_background()
+
         if not bool(flags & RenderFlags.SEG):
             glEnable(GL_MULTISAMPLE)
         else:
@@ -509,6 +515,7 @@ class Renderer(object):
     ###########################################################################
 
     def _bind_and_draw_primitive(self, primitive, pose, program, flags):
+
         # Set model pose matrix
         program.set_uniform('M', pose)
 
@@ -580,7 +587,6 @@ class Renderer(object):
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
             else:
                 glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
-
             # Set culling mode
             if material.doubleSided or flags & RenderFlags.SKIP_CULL_FACES:
                 glDisable(GL_CULL_FACE)
@@ -787,6 +793,36 @@ class Renderer(object):
             texture.delete()
 
         self._shadow_textures = shadow_textures.copy()
+
+        # check for changes in scene the background texture
+        if self._background_texture and id(scene.background_texture) != id(self._background_texture):
+            # clean up resources
+            self._fullscreen_quad_primitive._remove_from_context()
+            self._background_texture._remove_from_context()
+            self._background_texture = None
+            self._fullscreen_quad_primitive = None
+
+        if scene.background_texture and not self._background_texture:
+            self._background_texture = scene.background_texture
+            # for convenience, will the width and height field of the texture
+            self._background_texture.width = self._background_texture.source.shape[1]
+            self._background_texture.height = self._background_texture.source.shape[0]
+            self._background_texture._add_to_context()
+            vertices = np.array([[-1, -1, 0],  # bottom left corner
+                                 [-1, 1, 0],  # top left corner
+                                 [1, 1, 0],  # top right corner
+                                 [1, -1, 0]],
+                                dtype=np.float32)  # bottom right corner
+            indices = np.array([0, 1, 2,  # first triangle (bottom left - top left - top right)
+                                0, 2, 3],  # second triangle (bottom left - top right - bottom right)
+                               dtype=np.float32)  # bottom right corner
+            self._fullscreen_quad_primitive = Primitive(
+                positions=vertices,
+                indices=indices,
+                mode=GLTF.TRIANGLES
+            )
+            self._fullscreen_quad_primitive._add_to_context()
+
 
     ###########################################################################
     # Texture Management
@@ -1320,9 +1356,52 @@ class Renderer(object):
             program._add_to_context()
         return program
 
+    def _get_fullscreen_quad_program(self):
+        program = self._program_cache.get_program(
+            vertex_shader='fullscreen_quad.vert',
+            fragment_shader='fullscreen_quad.frag'
+        )
+        if not program._in_context():
+            program._add_to_context()
+        return program
+
+
     def _render_debug_quad(self):
         x = glGenVertexArrays(1)
         glBindVertexArray(x)
         glDrawArrays(GL_TRIANGLES, 0, 6)
         glBindVertexArray(0)
         glDeleteVertexArrays(1, [x])
+
+
+    def _render_background(self):
+        """Render the background texture on a full screen quad. """
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_CULL_FACE)
+
+        program = self._get_fullscreen_quad_program()
+        program._bind()
+
+        # The texture is scaled accordingly to fill out the whole
+        # vertical field of view. The texture aspect ratio is always mantained.
+        m = np.eye(4,4)
+        vp_aspect_ratio = self.viewport_width / self.viewport_height
+        img_aspect_ratio = self._background_texture.width / self._background_texture.height
+        m[0, 0] = img_aspect_ratio / vp_aspect_ratio
+        program.set_uniform('view_mat', m)
+
+        self._fullscreen_quad_primitive._bind()
+        self._bind_texture(self._background_texture, "bg_image",program)
+        # Render mesh
+        glDrawElementsInstanced(
+            self._fullscreen_quad_primitive.mode, self._fullscreen_quad_primitive.indices.size, GL_UNSIGNED_INT,
+            ctypes.c_void_p(0), 1)
+        # Unbind mesh buffers
+        self._fullscreen_quad_primitive._unbind()
+        program._unbind()
+        # Finally, bind and draw the primitive
+        self._reset_active_textures()
+        glEnable(GL_DEPTH_TEST)
+        glEnable(GL_CULL_FACE)
+
+
