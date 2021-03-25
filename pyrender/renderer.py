@@ -1378,7 +1378,7 @@ class Renderer(object):
         """Render the background texture on a full screen quad. """
         glDisable(GL_DEPTH_TEST)
         glDisable(GL_CULL_FACE)
-
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
         program = self._get_fullscreen_quad_program()
         program._bind()
 
@@ -1403,5 +1403,6 @@ class Renderer(object):
         self._reset_active_textures()
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_CULL_FACE)
+
 
 
