@@ -149,6 +149,8 @@ class Renderer(object):
         if flags & (RenderFlags.VERTEX_NORMALS | RenderFlags.FACE_NORMALS):
             self._normals_pass(scene, flags)
 
+        self._hud_pass(scene, flags)
+
         # Update camera settings for retrieving depth buffers
         self._latest_znear = scene.main_camera_node.camera.znear
         self._latest_zfar = scene.main_camera_node.camera.zfar
@@ -322,6 +324,53 @@ class Renderer(object):
     ###########################################################################
     # Rendering passes
     ###########################################################################
+    def _hud_pass(self, scene, flags):
+        # If using offscreen render, bind main framebuffer
+        if flags & RenderFlags.OFFSCREEN:
+            self._configure_main_framebuffer()
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self._main_fb_ms)
+        else:
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+
+        glViewport(0, 0, self.viewport_width, self.viewport_height)
+        glDisable(GL_DEPTH_TEST)
+        for node in scene.hud_nodes:
+            mesh = node.mesh
+            for primitive in mesh.primitives:
+                # First, get and bind the appropriate program
+                program = self._get_primitive_program(
+                    primitive, flags, ProgramFlags.USE_MATERIAL
+                )
+                program._bind()
+                n = 0.01
+                f = 1000
+                P = np.zeros((4, 4))
+                P[0][0] = 1/ (self.viewport_width / self.viewport_height)
+                P[1][1] = 1
+                P[2][2] = 2.0 / (n - f)
+                P[2][3] = (f + n) / (n - f)
+                P[3][3] = 1.0
+                mat_id = np.eye(4)
+                # Set the camera uniforms
+                program.set_uniform('V', mat_id)
+                program.set_uniform('P', P)
+                program.set_uniform('cam_pos', mat_id)
+                # Finally, bind and draw the primitive
+                self._bind_lighting(scene, program, node, flags)
+                self._bind_and_draw_primitive(
+                    primitive=primitive,
+                    pose=node.matrix,
+                    program=program,
+                    flags=flags
+                )
+                self._reset_active_textures()
+
+                # Unbind the shader and flush the output
+                if program is not None:
+                    program._unbind()
+                glFlush()
+
+
 
     def _forward_pass(self, scene, flags, seg_node_map=None):
         # Set up viewport for render
@@ -348,6 +397,7 @@ class Renderer(object):
 
         # Set up camera matrices
         V, P = self._get_camera_matrices(scene)
+
 
         program = None
         # Now, render each object in sorted order
@@ -735,8 +785,11 @@ class Renderer(object):
 
     def _update_context(self, scene, flags):
 
+        # # Update hud meshes
+        hud_meshes = {n.mesh for n in scene.hud_nodes}
+
         # Update meshes
-        scene_meshes = scene.meshes
+        scene_meshes = scene.meshes.union(hud_meshes)
 
         # Add new meshes to context
         for mesh in scene_meshes - self._meshes:
@@ -755,6 +808,7 @@ class Renderer(object):
         for m in scene_meshes:
             for p in m.primitives:
                 mesh_textures |= p.material.textures
+
 
         # Add new textures to context
         for texture in mesh_textures - self._mesh_textures:

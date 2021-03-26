@@ -58,6 +58,7 @@ class Scene(object):
         self._obj_to_nodes = {}
         self._obj_name_to_nodes = {}
         self._mesh_nodes = set()
+        self._hud_nodes = set()
         self._point_light_nodes = set()
         self._spot_light_nodes = set()
         self._directional_light_nodes = set()
@@ -152,6 +153,13 @@ class Scene(object):
         """set of :class:`Node` : The nodes containing meshes.
         """
         return self._mesh_nodes
+
+    @property
+    def hud_nodes(self):
+        """set of :class:`Node` : The nodes containing hud meshes.
+        """
+        return self._hud_nodes
+
 
     @property
     def lights(self):
@@ -357,6 +365,14 @@ class Scene(object):
             nodes = nodes & matches
 
         return nodes
+
+    def add_hud_node(self, node, parent_node=None):
+        if node in self.hud_nodes:
+            raise ValueError('Node already in scene')
+        if node.mesh is None:
+            raise ValueError('Hud Node must contain a mesh')
+        self._hud_nodes.add(node)
+        return node
 
     def add_node(self, node, parent_node=None):
         """Add a Node to the scene.
