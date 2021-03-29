@@ -337,9 +337,9 @@ class Renderer(object):
         for node in scene.hud_nodes:
             mesh = node.mesh
             for primitive in mesh.primitives:
-                # First, get and bind the appropriate program
+                # First, get and bind the appropriate program. We ignore lighting
                 program = self._get_primitive_program(
-                    primitive, flags, ProgramFlags.USE_MATERIAL
+                    primitive, RenderFlags.FLAT, ProgramFlags.USE_MATERIAL
                 )
                 program._bind()
                 n = 0.01
@@ -356,7 +356,6 @@ class Renderer(object):
                 program.set_uniform('P', P)
                 program.set_uniform('cam_pos', mat_id)
                 # Finally, bind and draw the primitive
-                self._bind_lighting(scene, program, node, flags)
                 self._bind_and_draw_primitive(
                     primitive=primitive,
                     pose=node.matrix,
