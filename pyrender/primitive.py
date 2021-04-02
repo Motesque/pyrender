@@ -91,7 +91,8 @@ class Primitive(object):
         self._buffers = []
         self._is_transparent = None
         self._buf_flags = None
-
+        self.vertex_buffer = None
+        self.vb_dirty = False
     @property
     def positions(self):
         """(n,3) float : XYZ vertex positions.
@@ -103,6 +104,7 @@ class Primitive(object):
         value = np.asanyarray(value, dtype=np.float32)
         self._positions = np.ascontiguousarray(value)
         self._bounds = None
+        self.vb_dirty = True
 
     @property
     def normals(self):
@@ -316,27 +318,14 @@ class Primitive(object):
         """
         return self._compute_transparency()
 
-    def _add_to_context(self):
-        if self._vaid is not None:
-            raise ValueError('Mesh is already bound to a context')
-
-        # Generate and bind VAO
-        self._vaid = glGenVertexArrays(1)
+    def update_vertex_data(self):
+        if self._vaid is None:
+            raise ValueError('Mesh is not bound to a context')
         glBindVertexArray(self._vaid)
-
-        #######################################################################
-        # Fill vertex buffer
-        #######################################################################
-
-        # Generate and bind vertex buffer
-        vertexbuffer = glGenBuffers(1)
-        self._buffers.append(vertexbuffer)
-        glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer)
-
+        glBindBuffer(GL_ARRAY_BUFFER, self.vertex_buffer)
         # positions
         vertex_data = self.positions
         attr_sizes = [3]
-
         # Normals
         if self.normals is not None:
             vertex_data = np.hstack((vertex_data, self.normals))
@@ -380,7 +369,29 @@ class Primitive(object):
             )
             glEnableVertexAttribArray(i)
             offset += sz
+        glBindVertexArray(0)
+        self.vb_dirty = False
+        return attr_sizes
 
+    def _add_to_context(self):
+        if self._vaid is not None:
+            raise ValueError('Mesh is already bound to a context')
+
+        # Generate and bind VAO
+        self._vaid = glGenVertexArrays(1)
+        glBindVertexArray(self._vaid)
+
+        #######################################################################
+        # Fill vertex buffer
+        #######################################################################
+
+        # Generate and bind vertex buffer
+        vertexbuffer = glGenBuffers(1)
+        self._buffers.append(vertexbuffer)
+        self.vertex_buffer = vertexbuffer
+        attr_sizes = self.update_vertex_data()
+        glBindVertexArray(self._vaid)
+       
         #######################################################################
         # Fill model matrix buffer
         #######################################################################
@@ -430,6 +441,7 @@ class Primitive(object):
             glDeleteBuffers(len(self._buffers), self._buffers)
             self._vaid = None
             self._buffers = []
+            self.vertex_buffer = None
 
     def _in_context(self):
         return self._vaid is not None

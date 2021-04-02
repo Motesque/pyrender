@@ -419,7 +419,8 @@ class Renderer(object):
                 color = color / 255.0
 
             for primitive in mesh.primitives:
-
+                if primitive.vb_dirty:
+                    primitive.update_vertex_data()
                 # First, get and bind the appropriate program
                 program = self._get_primitive_program(
                     primitive, flags, ProgramFlags.USE_MATERIAL
